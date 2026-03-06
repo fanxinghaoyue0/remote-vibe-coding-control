@@ -1,0 +1,12 @@
+name = "remote-vibe-coding-control"
+main = "src/worker/index.ts"
+compatibility_date = "2026-03-05"
+
+[vars]
+CLIENT_DOWNLOAD_URL = "https://github.com/your-org/your-repo/releases/latest"
+CLIENT_TUTORIAL_URL = "https://github.com/your-org/your-repo#readme"
+
+[[kv_namespaces]]
+binding = "STORE"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_YOUR_KV_PREVIEW_NAMESPACE_ID"
