@@ -21,6 +21,7 @@
 
 - `Cloudflare Worker + KV`
   - 存密文快照与密文操作队列
+  - 远程操作采用“单挂起任务”模型，降低空闲轮询时的 KV `list` 消耗
   - `AGENT_TOKEN` 鉴权本地 Agent
   - `viewer proof`（由主密钥派生）鉴权 Web 管理页面
 - `Local Agent`
@@ -79,7 +80,7 @@ export POLL_INTERVAL_ACTIVE_MS=3000
 export POLL_INTERVAL_IDLE_MS=15000
 export ACTIVITY_WINDOW_MS=120000
 export SNAPSHOT_DEBOUNCE_MS=1500
-export PRESENCE_PING_INTERVAL_MS=300000
+export PRESENCE_PING_INTERVAL_MS=1800000
 export LIVE_SYNC_INTERVAL_MS=10000
 # 网络/配额容错（可选）
 export REMOTE_RETRY_BASE_MS=15000
@@ -125,6 +126,8 @@ npm run dev:agent
 ### 可靠性
 
 - 快照上传基于本地文件指纹变化驱动（无变化不写入）
+- Agent 在线心跳默认降频到 30 分钟，减少空闲时的 KV 写入
+- 远程操作改为单挂起任务模式，Agent 只需读取固定 key，不再通过 KV `list` 扫描任务
 - Worker/KV 返回配额或限流错误时，Agent 会进入冷却并自动重试
 - 远程异常期间 Agent 进程保持运行，配额恢复后自动恢复同步
 
@@ -153,6 +156,7 @@ A Cloudflare-based remote Codex control console so you can control your office C
 
 - `Cloudflare Worker + KV`
   - Stores encrypted snapshots and encrypted operation queue
+  - Uses a single pending-operation slot to avoid idle KV `list` scans
   - `AGENT_TOKEN` authenticates local agent
   - viewer proof (derived from master key) authenticates web viewer
 - `Local Agent`
@@ -211,7 +215,7 @@ export POLL_INTERVAL_ACTIVE_MS=3000
 export POLL_INTERVAL_IDLE_MS=15000
 export ACTIVITY_WINDOW_MS=120000
 export SNAPSHOT_DEBOUNCE_MS=1500
-export PRESENCE_PING_INTERVAL_MS=300000
+export PRESENCE_PING_INTERVAL_MS=1800000
 export LIVE_SYNC_INTERVAL_MS=10000
 # optional: remote quota/network resilience
 export REMOTE_RETRY_BASE_MS=15000
@@ -257,6 +261,8 @@ Note: this workflow is only suitable for environments where authorization and ri
 ### Reliability
 
 - Snapshot upload is change-driven by local file fingerprints (no local change, no snapshot write)
+- Agent presence ping defaults to every 30 minutes to reduce idle KV writes
+- Remote operations use a single pending slot, so the agent reads one fixed key instead of listing queued keys
 - If Worker/KV returns quota or rate-limit errors, Agent enters cooldown and retries later automatically
 - Agent process keeps running during remote failures and recovers automatically when quota/network is back
 

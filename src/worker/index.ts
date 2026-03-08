@@ -143,12 +143,8 @@ function snapshotKey(agentId: string): string {
   return `snapshot:${agentId}`;
 }
 
-function opKey(agentId: string, opId: string): string {
-  return `op:${agentId}:${opId}`;
-}
-
-function opPrefix(agentId: string): string {
-  return `op:${agentId}:`;
+function pendingOpKey(agentId: string): string {
+  return `pending-op:${agentId}`;
 }
 
 interface KvUsageState {
@@ -169,7 +165,7 @@ const KV_FREE_LIMITS = {
   storageBytes: 1_073_741_824,
 };
 
-const ONLINE_WINDOW_MS = 8 * 60 * 1000;
+const ONLINE_WINDOW_MS = 40 * 60 * 1000;
 
 function usageKey(agentId: string, dayKey: string): string {
   return `usage:${agentId}:${dayKey}`;
@@ -410,27 +406,18 @@ export default {
           };
 
           await env.STORE.put(metaKey(payload.agentId), JSON.stringify(nextMeta));
-          await trackKvUsage(env, payload.agentId, { reads: 1, writes: 1 });
           return json({ ok: true, updatedAt: now });
         }
 
         if (request.method === "GET" && pathname === "/api/agent/ops/pull") {
           const agentId = (url.searchParams.get("agentId") ?? "").trim();
-          const limitRaw = Number(url.searchParams.get("limit") ?? "20");
-          const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.floor(limitRaw), 1), 100) : 20;
-
           if (!agentId) {
             return json({ error: "agentId is required" }, 400);
           }
-
-          const list = await env.STORE.list({ prefix: opPrefix(agentId), limit });
           const operations: Array<{ opId: string; opEnvelope: EncryptedEnvelope; createdAt: string }> = [];
 
-          for (const key of list.keys) {
-            const raw = await env.STORE.get(key.name);
-            if (!raw) {
-              continue;
-            }
+          const raw = await env.STORE.get(pendingOpKey(agentId));
+          if (raw) {
             try {
               const item = JSON.parse(raw) as {
                 opId: string;
@@ -439,19 +426,32 @@ export default {
               };
               operations.push(item);
             } catch {
-              // ignore malformed entries
+              // ignore malformed entry
             }
           }
 
-          operations.sort((a, b) => (a.opId < b.opId ? -1 : 1));
           return json({ operations });
         }
 
         if (request.method === "POST" && pathname === "/api/agent/ops/ack") {
           const payload = await parseJson(request, ackSchema);
-          await Promise.all(payload.opIds.map((opId) => env.STORE.delete(opKey(payload.agentId, opId))));
-          await trackKvUsage(env, payload.agentId, { deletes: payload.opIds.length });
-          return json({ ok: true, deleted: payload.opIds.length });
+          const raw = await env.STORE.get(pendingOpKey(payload.agentId));
+          if (!raw) {
+            return json({ ok: true, deleted: 0 });
+          }
+
+          try {
+            const current = JSON.parse(raw) as { opId?: string };
+            if (!current.opId || !payload.opIds.includes(current.opId)) {
+              return json({ ok: true, deleted: 0 });
+            }
+          } catch {
+            return json({ ok: true, deleted: 0 });
+          }
+
+          await env.STORE.delete(pendingOpKey(payload.agentId));
+          await trackKvUsage(env, payload.agentId, { reads: 1, deletes: 1 });
+          return json({ ok: true, deleted: 1 });
         }
 
         return json({ error: "Not found" }, 404);
@@ -501,13 +501,18 @@ export default {
             return json({ error: error instanceof Error ? error.message : "Unauthorized" }, 401);
           }
 
+          const existingRaw = await env.STORE.get(pendingOpKey(payload.agentId));
+          if (existingRaw) {
+            return json({ error: "Agent 当前还有未处理任务，请稍后刷新后再发起新任务" }, 409);
+          }
+
           const opId = createOpKey();
           const record = {
             opId,
             opEnvelope: payload.opEnvelope,
             createdAt: new Date().toISOString(),
           };
-          await env.STORE.put(opKey(payload.agentId, opId), JSON.stringify(record));
+          await env.STORE.put(pendingOpKey(payload.agentId), JSON.stringify(record));
           await trackKvUsage(env, payload.agentId, { reads: 1, writes: 1 });
           return json({ ok: true, opId });
         }

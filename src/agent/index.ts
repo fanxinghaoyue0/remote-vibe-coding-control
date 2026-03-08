@@ -70,7 +70,7 @@ const env = {
   pollIntervalIdleMs: Number(process.env.POLL_INTERVAL_IDLE_MS ?? "15000"),
   activityWindowMs: Number(process.env.ACTIVITY_WINDOW_MS ?? "120000"),
   snapshotDebounceMs: Number(process.env.SNAPSHOT_DEBOUNCE_MS ?? "1500"),
-  presencePingIntervalMs: Number(process.env.PRESENCE_PING_INTERVAL_MS ?? "300000"),
+  presencePingIntervalMs: Number(process.env.PRESENCE_PING_INTERVAL_MS ?? "1800000"),
   liveSyncIntervalMs: Number(process.env.LIVE_SYNC_INTERVAL_MS ?? "10000"),
   remoteRetryBaseMs: Number(process.env.REMOTE_RETRY_BASE_MS ?? "15000"),
   remoteRetryMaxMs: Number(process.env.REMOTE_RETRY_MAX_MS ?? "300000"),
@@ -625,12 +625,9 @@ async function pushSnapshot(snapshot: RemoteSnapshot): Promise<void> {
 }
 
 async function pullOperations(): Promise<Array<{ opId: string; opEnvelope: EncryptedEnvelope }>> {
-  const response = await workerFetch(
-    `/api/agent/ops/pull?agentId=${encodeURIComponent(env.agentId)}&limit=20`,
-    {
-      method: "GET",
-    },
-  );
+  const response = await workerFetch(`/api/agent/ops/pull?agentId=${encodeURIComponent(env.agentId)}`, {
+    method: "GET",
+  });
 
   if (!response.ok) {
     const text = await response.text();
