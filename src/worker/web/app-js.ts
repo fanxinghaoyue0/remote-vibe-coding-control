@@ -662,10 +662,8 @@ function reconcilePending(snapshot) {
         return message.role === "user"
           && normalizeComparableText(message.text) === normalizeComparableText(pending.text);
       });
-      const baselineCount = typeof pending.baselineCount === "number" ? pending.baselineCount : 0;
-      const progressed = thread.messageCount > baselineCount;
 
-      if (!hasSameUserMessage && !progressed) {
+      if (!hasSameUserMessage) {
         remaining.push(pending);
       }
     }
