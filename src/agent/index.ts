@@ -90,9 +90,11 @@ type StringMap = Record<string, string>;
 const runtimeState: {
   syncState: AgentStatus["syncState"];
   activeOperation: string | null;
+  lastSnapshotHash: string;
 } = {
   syncState: "idle",
   activeOperation: null,
+  lastSnapshotHash: "",
 };
 
 function assertRequiredConfig(): void {
@@ -639,6 +641,27 @@ async function pushSnapshot(snapshot: RemoteSnapshot): Promise<void> {
   }
 }
 
+function computeSnapshotHash(snapshot: RemoteSnapshot): string {
+  const normalizedSnapshot = {
+    ...snapshot,
+    generatedAt: "",
+  };
+  return createHash("sha1")
+    .update(JSON.stringify(normalizedSnapshot))
+    .digest("hex");
+}
+
+async function pushSnapshotIfChanged(snapshot: RemoteSnapshot, options?: { force?: boolean }): Promise<boolean> {
+  const nextHash = computeSnapshotHash(snapshot);
+  if (!options?.force && nextHash === runtimeState.lastSnapshotHash) {
+    return false;
+  }
+
+  await pushSnapshot(snapshot);
+  runtimeState.lastSnapshotHash = nextHash;
+  return true;
+}
+
 async function pullOperations(): Promise<Array<{ opId: string; opEnvelope: EncryptedEnvelope }>> {
   const response = await workerFetch(`/api/agent/ops/pull?agentId=${encodeURIComponent(env.agentId)}`, {
     method: "GET",
@@ -719,7 +742,7 @@ async function runCommand(
       syncInFlight = true;
       try {
         const snapshot = await collectSnapshot();
-        await pushSnapshot(snapshot);
+        await pushSnapshotIfChanged(snapshot);
       } catch (error) {
         console.error("[live-sync:error]", error);
       } finally {
@@ -984,10 +1007,14 @@ async function loop(): Promise<void> {
       const shouldSync = !hasUploadedInitialSnapshot || ackIds.length > 0 || dueByChange;
       if (shouldSync) {
         const snapshot = await collectSnapshot();
-        await pushSnapshot(snapshot);
+        const pushed = await pushSnapshotIfChanged(snapshot, { force: !hasUploadedInitialSnapshot });
         hasUploadedInitialSnapshot = true;
         pendingChangeSince = 0;
-        console.log(`[sync] projects=${snapshot.projects.length} threads=${Object.keys(snapshot.threads).length}`);
+        console.log(
+          pushed
+            ? `[sync] projects=${snapshot.projects.length} threads=${Object.keys(snapshot.threads).length}`
+            : "[sync] unchanged",
+        );
       }
 
       remoteRetryMs = Math.max(env.remoteRetryBaseMs, env.loopIntervalMs);
