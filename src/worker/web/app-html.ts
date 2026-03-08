@@ -104,7 +104,10 @@ export const APP_HTML = `<!doctype html>
     <aside id="mobile-drawer" class="mobile-drawer hidden">
       <div class="mobile-drawer-head">
         <strong>导航</strong>
-        <button id="mobile-drawer-close" class="mobile-drawer-close" type="button" aria-label="关闭菜单">×</button>
+        <div class="mobile-drawer-actions">
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题">☾</button>
+          <button id="mobile-drawer-close" class="mobile-drawer-close" type="button" aria-label="关闭菜单">×</button>
+        </div>
       </div>
       <div class="mobile-drawer-path">
         <button id="mobile-path-projects" class="mobile-path-btn" type="button">项目</button>

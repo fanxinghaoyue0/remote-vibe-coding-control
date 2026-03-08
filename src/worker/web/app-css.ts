@@ -615,6 +615,12 @@ button.ghost {
   background: var(--bg-elev);
 }
 
+.mobile-drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .mobile-drawer-path {
   display: flex;
   align-items: center;
