@@ -38,6 +38,7 @@ body {
   margin: 0;
   height: 100vh;
   overflow: hidden;
+  overscroll-behavior-y: none;
   color: var(--text);
   background: var(--bg);
   font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
@@ -179,6 +180,8 @@ a {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .msg {
@@ -337,6 +340,25 @@ a {
   border-top: 1px solid var(--line);
   padding: 12px;
   background: var(--bg-elev-2);
+}
+
+.latest-jump-btn {
+  position: absolute;
+  right: 12px;
+  bottom: 112px;
+  z-index: 12;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-elev), #000 12%);
+  box-shadow: 0 10px 24px var(--shadow);
+  font: inherit;
+  cursor: pointer;
+}
+
+.latest-jump-btn.hidden {
+  display: none;
 }
 
 .branch-row {
@@ -734,6 +756,14 @@ button.ghost {
 
   .messages {
     padding: 10px;
+  }
+
+  .latest-jump-btn {
+    right: 10px;
+    bottom: 92px;
+    max-width: calc(100vw - 20px);
+    padding: 8px 10px;
+    font-size: 12px;
   }
 
   .controls {

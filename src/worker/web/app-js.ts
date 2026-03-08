@@ -11,6 +11,10 @@ const state = {
   pendingMessages: {},
   mobileLastScrollTop: 0,
   mobileTopbarVisible: true,
+  stickToLatest: true,
+  unseenMessageCount: 0,
+  lastRenderedThreadId: "",
+  lastRenderedMessageCount: 0,
   waitState: null,
   waitPollTimer: null,
   mobileNavMode: "projects",
@@ -36,6 +40,7 @@ const ui = {
   projectList: document.getElementById("project-list"),
   threadList: document.getElementById("thread-list"),
   messages: document.getElementById("messages"),
+  latestJumpBtn: document.getElementById("latest-jump-btn"),
   threadMeta: document.getElementById("thread-meta"),
   promptInput: document.getElementById("prompt-input"),
   sendBtn: document.getElementById("send-btn"),
@@ -601,6 +606,27 @@ function scrollMessagesToBottom() {
   }, 120);
 }
 
+function isNearLatest(threshold) {
+  const gap = ui.messages.scrollHeight - ui.messages.clientHeight - ui.messages.scrollTop;
+  return gap <= (threshold || 48);
+}
+
+function renderLatestJumpButton() {
+  if (!ui.latestJumpBtn) {
+    return;
+  }
+
+  if (state.stickToLatest || state.unseenMessageCount <= 0) {
+    ui.latestJumpBtn.classList.add("hidden");
+    ui.latestJumpBtn.textContent = "↓ 回到最新";
+    return;
+  }
+
+  const count = state.unseenMessageCount;
+  ui.latestJumpBtn.classList.remove("hidden");
+  ui.latestJumpBtn.textContent = count > 1 ? ("↓ " + String(count) + " 条新消息") : "↓ 1 条新消息";
+}
+
 function applyTheme(theme) {
   state.theme = theme === "light" ? "light" : "dark";
   document.body.classList.toggle("theme-light", state.theme === "light");
@@ -615,6 +641,12 @@ function toggleTheme() {
 }
 
 function handleMessagesScroll() {
+  state.stickToLatest = isNearLatest();
+  if (state.stickToLatest) {
+    state.unseenMessageCount = 0;
+    renderLatestJumpButton();
+  }
+
   if (!isMobileView()) {
     return;
   }
@@ -901,6 +933,7 @@ function renderThreads() {
     desktopItem.innerHTML = itemHtml;
     desktopItem.addEventListener("click", () => {
       state.selectedThreadId = thread.id;
+      state.stickToLatest = true;
       renderMessages();
       renderThreads();
     });
@@ -911,10 +944,10 @@ function renderThreads() {
     mobileItem.innerHTML = itemHtml;
     mobileItem.addEventListener("click", () => {
       state.selectedThreadId = thread.id;
+      state.stickToLatest = true;
       closeMobileDrawer();
       renderMessages();
       renderThreads();
-      scrollMessagesToBottom();
       setStatus("线程已切换");
     });
     ui.mobileThreadList.appendChild(mobileItem);
@@ -952,8 +985,19 @@ function renderMessages() {
   if (!thread) {
     clearMessages(isMobileView() ? "请从左上角菜单先选择项目，再选择线程。" : "选择线程后可查看消息并交互。");
     ui.threadMeta.textContent = "未选择线程";
+    state.lastRenderedThreadId = "";
+    state.lastRenderedMessageCount = 0;
+    state.unseenMessageCount = 0;
+    state.stickToLatest = true;
+    renderLatestJumpButton();
     return;
   }
+
+  const previousThreadId = state.lastRenderedThreadId;
+  const previousMessageCount = state.lastRenderedMessageCount;
+  const previousScrollTop = ui.messages.scrollTop;
+  const previousNearLatest = isNearLatest();
+  const threadChanged = previousThreadId !== thread.id;
 
   ui.messages.innerHTML = "";
   if (isMobileView()) {
@@ -965,8 +1009,14 @@ function renderMessages() {
   const combinedMessages = dedupeMessagesForDisplay(
     thread.messages.concat(getPendingMessages(thread.id)),
   );
+  const currentMessageCount = combinedMessages.length;
   if (combinedMessages.length === 0) {
     clearMessages("该线程暂时没有可展示消息。");
+    state.lastRenderedThreadId = thread.id;
+    state.lastRenderedMessageCount = 0;
+    state.unseenMessageCount = 0;
+    state.stickToLatest = true;
+    renderLatestJumpButton();
     return;
   }
 
@@ -989,7 +1039,26 @@ function renderMessages() {
     ui.messages.appendChild(card);
   }
 
-  scrollMessagesToBottom();
+  const shouldAutoScroll = threadChanged || state.stickToLatest || previousNearLatest;
+  const addedMessages = !threadChanged && currentMessageCount > previousMessageCount
+    ? currentMessageCount - previousMessageCount
+    : 0;
+
+  state.lastRenderedThreadId = thread.id;
+  state.lastRenderedMessageCount = currentMessageCount;
+
+  if (shouldAutoScroll) {
+    state.stickToLatest = true;
+    state.unseenMessageCount = 0;
+    scrollMessagesToBottom();
+  } else {
+    ui.messages.scrollTop = previousScrollTop;
+    if (addedMessages > 0) {
+      state.unseenMessageCount += addedMessages;
+    }
+  }
+
+  renderLatestJumpButton();
 }
 
 function renderAll() {
@@ -1263,6 +1332,7 @@ async function handleSend() {
 
     const pendingId = pushPendingMessage(thread, prompt);
     ui.promptInput.value = "";
+    state.stickToLatest = true;
     renderMessages();
     startAssistantPolling(thread.id, baselineAssistantCount);
     if (state.waitState) {
@@ -1414,6 +1484,13 @@ function wireEvents() {
   ui.syncMenuBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     toggleSyncMenu();
+  });
+
+  ui.latestJumpBtn.addEventListener("click", () => {
+    state.stickToLatest = true;
+    state.unseenMessageCount = 0;
+    renderLatestJumpButton();
+    scrollMessagesToBottom();
   });
 
   ui.syncMenuPop.addEventListener("click", (event) => {

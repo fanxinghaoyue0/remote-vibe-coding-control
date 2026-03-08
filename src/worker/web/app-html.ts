@@ -77,6 +77,7 @@ export const APP_HTML = `<!doctype html>
 
         <section class="main">
           <div id="messages" class="messages"></div>
+          <button id="latest-jump-btn" class="latest-jump-btn hidden" type="button">↓ 回到最新</button>
           <div class="controls">
             <div class="control-row branch-row">
               <select id="branch-select" style="flex:1"></select>
