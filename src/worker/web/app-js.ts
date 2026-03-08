@@ -27,6 +27,7 @@ const ui = {
   agentIdInput: document.getElementById("agent-id"),
   masterKeyInput: document.getElementById("master-key"),
   agentBadge: document.getElementById("agent-badge"),
+  mobileTopbarMeta: document.getElementById("mobile-topbar-meta"),
   statusText: document.getElementById("status-text"),
   quotaText: document.getElementById("quota-text"),
   quotaPrimaryFill: document.getElementById("quota-primary-fill"),
@@ -87,6 +88,60 @@ function renderAgentBadge() {
 
   const flag = presence.online ? "在线" : "离线";
   ui.agentBadge.textContent = "Agent: " + state.agentId + " · " + flag;
+}
+
+function compactCount(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  if (value >= 1000000) {
+    return String(Math.round(value / 100000) / 10) + "m";
+  }
+  if (value >= 1000) {
+    return String(Math.round(value / 100) / 10) + "k";
+  }
+  return String(value);
+}
+
+function formatClock(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderMobileTopbarMeta() {
+  if (!ui.mobileTopbarMeta) {
+    return;
+  }
+
+  const presence = state.agentPresence;
+  const onlineText = presence ? (presence.online ? "在线" : "离线") : "未连接";
+  const refreshText = formatClock(
+    presence && presence.snapshotUpdatedAt
+      ? presence.snapshotUpdatedAt
+      : (state.snapshot ? state.snapshot.generatedAt : ""),
+  );
+
+  if (!state.kvUsage || !state.kvUsage.limits) {
+    ui.mobileTopbarMeta.textContent = onlineText + " · " + refreshText + " · KV --";
+    return;
+  }
+
+  const usage = state.kvUsage;
+  const readRemain = Math.max(0, usage.limits.readsPerDay - usage.reads);
+  const writeRemain = Math.max(0, usage.limits.writesPerDay - usage.writes);
+  ui.mobileTopbarMeta.textContent = onlineText
+    + " · "
+    + refreshText
+    + " · KV R"
+    + compactCount(readRemain)
+    + " W"
+    + compactCount(writeRemain);
 }
 
 function bytesToBase64(bytes) {
@@ -494,6 +549,7 @@ function closeMobileDrawer() {
 
 function setMobileTopbarVisible(visible) {
   state.mobileTopbarVisible = visible;
+  document.body.classList.toggle("mobile-topbar-hidden", isMobileView() && !visible);
   if (!ui.topbar || !isMobileView()) {
     return;
   }
@@ -944,11 +1000,13 @@ function renderAll() {
   renderBranchControls();
   renderMessages();
   renderQuotaAndState();
+  renderMobileTopbarMeta();
   if (isMobileView()) {
     setMobileNavMode(state.mobileNavMode);
     setMobileTopbarVisible(state.mobileTopbarVisible);
   } else if (ui.topbar) {
     ui.topbar.classList.remove("topbar-hidden");
+    document.body.classList.remove("mobile-topbar-hidden");
   }
 }
 

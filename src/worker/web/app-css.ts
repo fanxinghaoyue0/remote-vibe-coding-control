@@ -12,6 +12,7 @@ export const APP_CSS = `
   --assistant-bg: #1a2233;
   --system-bg: #222731;
   --shadow: rgba(0, 0, 0, 0.28);
+  --mobile-topbar-space: 0px;
 }
 
 body.theme-light {
@@ -87,6 +88,10 @@ a {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.mobile-topbar-meta {
+  display: none;
 }
 
 .layout {
@@ -640,6 +645,14 @@ button.ghost {
 
 @media (max-width: 900px) {
   body {
+    --mobile-topbar-space: calc(46px + env(safe-area-inset-top));
+  }
+
+  body.mobile-topbar-hidden {
+    --mobile-topbar-space: 0px;
+  }
+
+  body {
     height: 100vh;
     overflow: hidden;
     font-size: 14px;
@@ -652,7 +665,8 @@ button.ghost {
   .layout {
     grid-template-columns: 1fr;
     min-height: 0;
-    padding-top: calc(46px + env(safe-area-inset-top));
+    padding-top: var(--mobile-topbar-space);
+    transition: padding-top 180ms ease;
   }
 
   .nav-panel {
@@ -690,6 +704,20 @@ button.ghost {
 
   .topbar-left {
     gap: 0;
+  }
+
+  .mobile-topbar-meta {
+    display: block;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: right;
+    font-family: "IBM Plex Mono", "Menlo", monospace;
+    font-size: 11px;
+    line-height: 1.25;
+    color: var(--muted);
   }
 
   .msg {

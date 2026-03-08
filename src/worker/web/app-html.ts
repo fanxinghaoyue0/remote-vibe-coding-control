@@ -2,7 +2,7 @@ export const APP_HTML = `<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#0e1116" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -43,6 +43,7 @@ export const APP_HTML = `<!doctype html>
             <div class="badge" id="agent-badge">未连接</div>
           </div>
         </div>
+        <div id="mobile-topbar-meta" class="mobile-topbar-meta">未连接 · --:-- · KV --</div>
         <div class="topbar-right">
           <div class="status" id="status-text">等待解锁</div>
           <div class="quota-wrap">
