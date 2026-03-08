@@ -8,6 +8,7 @@ const state = {
   kvUsage: null,
   selectedProjectId: "",
   selectedThreadId: "",
+  draftThreads: {},
   pendingMessages: {},
   mobileLastScrollTop: 0,
   mobileTopbarVisible: true,
@@ -685,11 +686,134 @@ function getSelectedProject() {
   return state.snapshot.projects.find((project) => project.id === state.selectedProjectId) || null;
 }
 
-function getSelectedThread() {
-  if (!state.snapshot || !state.selectedThreadId) {
+function isDraftThread(thread) {
+  return Boolean(thread && thread.draft);
+}
+
+function getThreadById(threadId) {
+  if (!threadId) {
     return null;
   }
-  return state.snapshot.threads[state.selectedThreadId] || null;
+  if (state.draftThreads[threadId]) {
+    return state.draftThreads[threadId];
+  }
+  if (!state.snapshot || !state.snapshot.threads) {
+    return null;
+  }
+  return state.snapshot.threads[threadId] || null;
+}
+
+function getSelectedThread() {
+  if (!state.selectedThreadId) {
+    return null;
+  }
+  return getThreadById(state.selectedThreadId);
+}
+
+function getDraftThreadsForProject(projectId) {
+  return Object.values(state.draftThreads)
+    .filter((thread) => thread.projectId === projectId)
+    .sort((left, right) => {
+      return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+    });
+}
+
+function getProjectThreadIds(project) {
+  const draftIds = getDraftThreadsForProject(project.id).map((thread) => thread.id);
+  return project.threadIds.concat(draftIds);
+}
+
+function createDraftThread(project) {
+  const now = new Date().toISOString();
+  const draftId = "draft-" + Date.now() + "-" + Math.floor(Math.random() * 10000);
+  const draft = {
+    id: draftId,
+    projectId: project.id,
+    cwd: project.cwd,
+    title: "未命名线程",
+    createdAt: now,
+    updatedAt: now,
+    messageCount: 0,
+    lastMessagePreview: "发送首条消息后创建",
+    rolloutPath: "draft",
+    messages: [],
+    draft: true,
+    baselineThreadIds: project.threadIds.slice(),
+    promptComparable: "",
+  };
+  state.draftThreads[draftId] = draft;
+  return draft;
+}
+
+function threadHasUserMessage(thread, comparableText) {
+  if (!thread || !thread.messages || !comparableText) {
+    return false;
+  }
+  return thread.messages.some((message) => {
+    return message.role === "user"
+      && normalizeComparableText(message.text) === comparableText;
+  });
+}
+
+function adoptDraftThread(draftId, realThreadId) {
+  const draft = state.draftThreads[draftId];
+  if (!draft) {
+    return;
+  }
+
+  const draftPending = state.pendingMessages[draftId];
+  if (draftPending && draftPending.length > 0) {
+    const existingPending = state.pendingMessages[realThreadId] || [];
+    state.pendingMessages[realThreadId] = existingPending.concat(draftPending);
+    delete state.pendingMessages[draftId];
+  }
+
+  if (state.waitState && state.waitState.threadId === draftId) {
+    state.waitState.threadId = realThreadId;
+  }
+  if (state.selectedThreadId === draftId) {
+    state.selectedThreadId = realThreadId;
+    state.stickToLatest = true;
+  }
+  if (state.lastRenderedThreadId === draftId) {
+    state.lastRenderedThreadId = realThreadId;
+  }
+
+  delete state.draftThreads[draftId];
+}
+
+function reconcileDraftThreads(snapshot) {
+  for (const draftId of Object.keys(state.draftThreads)) {
+    const draft = state.draftThreads[draftId];
+    const project = snapshot.projects.find((item) => item.id === draft.projectId);
+    if (!project) {
+      continue;
+    }
+
+    const realThreads = project.threadIds
+      .map((threadId) => snapshot.threads[threadId])
+      .filter(Boolean);
+
+    let matchedThread = null;
+    if (draft.promptComparable) {
+      const promptMatches = realThreads
+        .filter((thread) => threadHasUserMessage(thread, draft.promptComparable))
+        .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+      matchedThread = promptMatches[0] || null;
+    }
+
+    if (!matchedThread) {
+      const baselineIds = Array.isArray(draft.baselineThreadIds) ? draft.baselineThreadIds : [];
+      const freshThreads = realThreads.filter((thread) => !baselineIds.includes(thread.id));
+      if (freshThreads.length === 1) {
+        matchedThread = freshThreads[0];
+      }
+    }
+
+    if (matchedThread) {
+      adoptDraftThread(draftId, matchedThread.id);
+    }
+  }
 }
 
 function getPendingMessages(threadId) {
@@ -867,18 +991,19 @@ function renderProjects() {
   }
 
   for (const project of projects) {
+    const threadIds = getProjectThreadIds(project);
     const branchText = project.currentBranch ? ("分支: " + project.currentBranch) : "非 Git 项目";
     const itemHtml = "<div class=\"item-title\">" + project.name + "</div>"
       + "<div class=\"item-meta\">" + project.cwd + "</div>"
       + "<div class=\"item-meta\">" + branchText + "</div>"
-      + "<div class=\"item-meta\">" + String(project.threadIds.length) + " threads</div>";
+      + "<div class=\"item-meta\">" + String(threadIds.length) + " threads</div>";
 
     const desktopItem = document.createElement("li");
     desktopItem.className = "item" + (project.id === state.selectedProjectId ? " active" : "");
     desktopItem.innerHTML = itemHtml;
     desktopItem.addEventListener("click", () => {
       state.selectedProjectId = project.id;
-      state.selectedThreadId = project.threadIds[0] || "";
+      state.selectedThreadId = threadIds[0] || "";
       renderAll();
     });
     ui.projectList.appendChild(desktopItem);
@@ -911,17 +1036,18 @@ function renderThreads() {
     return;
   }
 
-  if (!isMobileView() && !state.selectedThreadId && project.threadIds.length > 0) {
-    state.selectedThreadId = project.threadIds[0];
+  const threadIds = getProjectThreadIds(project);
+  if (!isMobileView() && !state.selectedThreadId && threadIds.length > 0) {
+    state.selectedThreadId = threadIds[0];
   }
 
-  for (const threadId of project.threadIds) {
-    const thread = snapshot.threads[threadId];
+  for (const threadId of threadIds) {
+    const thread = getThreadById(threadId);
     if (!thread) {
       continue;
     }
-    const itemHtml = "<div class=\"item-title\">" + thread.title + "</div>"
-      + "<div class=\"item-meta\">" + formatTime(thread.updatedAt) + "</div>"
+    const itemHtml = "<div class=\"item-title\">" + (thread.title || "未命名线程") + "</div>"
+      + "<div class=\"item-meta\">" + (isDraftThread(thread) ? "等待首条消息" : formatTime(thread.updatedAt)) + "</div>"
       + "<div class=\"item-meta\">" + truncate(thread.lastMessagePreview, 80) + "</div>";
 
     const desktopItem = document.createElement("li");
@@ -997,6 +1123,8 @@ function renderMessages() {
   ui.messages.innerHTML = "";
   if (isMobileView()) {
     ui.threadMeta.textContent = thread.title;
+  } else if (isDraftThread(thread)) {
+    ui.threadMeta.textContent = "新线程 | " + thread.cwd;
   } else {
     ui.threadMeta.textContent = thread.id + " | " + thread.cwd;
   }
@@ -1006,7 +1134,7 @@ function renderMessages() {
   );
   const currentMessageCount = combinedMessages.length;
   if (combinedMessages.length === 0) {
-    clearMessages("该线程暂时没有可展示消息。");
+    clearMessages(isDraftThread(thread) ? "输入首条消息后会创建新线程。" : "该线程暂时没有可展示消息。");
     state.lastRenderedThreadId = thread.id;
     state.lastRenderedMessageCount = 0;
     state.unseenMessageCount = 0;
@@ -1118,6 +1246,7 @@ async function fetchSnapshot(options) {
   state.snapshot = snapshot;
   state.agentPresence = payload.agentPresence || null;
   state.kvUsage = payload.kvUsage || null;
+  reconcileDraftThreads(snapshot);
   reconcilePending(snapshot);
 
   if (!state.selectedProjectId && snapshot.projects.length > 0) {
@@ -1131,20 +1260,21 @@ async function fetchSnapshot(options) {
   }
 
   const projectAfterFallback = getSelectedProject();
-  if (projectAfterFallback && projectAfterFallback.threadIds.length > 0) {
-    if (!state.selectedThreadId || !projectAfterFallback.threadIds.includes(state.selectedThreadId)) {
+  const projectThreadIds = projectAfterFallback ? getProjectThreadIds(projectAfterFallback) : [];
+  if (projectAfterFallback && projectThreadIds.length > 0) {
+    if (!state.selectedThreadId || !projectThreadIds.includes(state.selectedThreadId)) {
       if (isMobileView()) {
         state.selectedThreadId = "";
       } else {
-        state.selectedThreadId = projectAfterFallback.threadIds[0];
+        state.selectedThreadId = projectThreadIds[0];
       }
     }
   } else {
     state.selectedThreadId = "";
   }
 
-  if (!isMobileView() && !state.selectedThreadId && projectAfterFallback && projectAfterFallback.threadIds.length > 0) {
-      state.selectedThreadId = projectAfterFallback.threadIds[0];
+  if (!isMobileView() && !state.selectedThreadId && projectAfterFallback && projectThreadIds.length > 0) {
+      state.selectedThreadId = projectThreadIds[0];
   }
 
   renderAll();
@@ -1319,11 +1449,25 @@ async function handleSend() {
   ui.sendBtn.disabled = true;
 
   try {
-    await queueOperation({
-      type: "send_message",
-      threadId: thread.id,
-      prompt,
-    });
+    const operation = isDraftThread(thread)
+      ? {
+        type: "create_thread",
+        cwd: thread.cwd,
+        prompt,
+      }
+      : {
+        type: "send_message",
+        threadId: thread.id,
+        prompt,
+      };
+
+    await queueOperation(operation);
+
+    if (isDraftThread(thread)) {
+      thread.promptComparable = normalizeComparableText(prompt);
+      thread.lastMessagePreview = truncate(prompt, 140);
+      thread.updatedAt = new Date().toISOString();
+    }
 
     const pendingId = pushPendingMessage(thread, prompt);
     ui.promptInput.value = "";
@@ -1343,27 +1487,20 @@ async function handleSend() {
 
 async function handleNewThread() {
   const project = getSelectedProject();
-  const cwdInput = window.prompt("新线程工作目录 (cwd)", project ? project.cwd : "") || "";
-  const cwd = cwdInput.trim();
-  if (!cwd) {
+  if (!project) {
+    setStatus("先选择项目");
     return;
   }
 
-  const prompt = (window.prompt("线程首条消息", "请帮我分析当前项目并给出下一步计划") || "").trim();
-  if (!prompt) {
-    return;
+  const draft = createDraftThread(project);
+  state.selectedThreadId = draft.id;
+  state.stickToLatest = true;
+  renderAll();
+  if (isMobileView()) {
+    closeMobileDrawer();
   }
-
-  const title = (window.prompt("可选: 自定义线程标题", "") || "").trim();
-  await queueOperation({
-    type: "create_thread",
-    cwd,
-    prompt,
-    title: title || undefined,
-  });
-
-  setStatus("线程创建请求已提交，等待 Agent 执行");
-  await fetchSnapshot();
+  ui.promptInput.focus();
+  setStatus("新线程已就绪，发送首条消息后创建");
 }
 
 async function handleRequestSync() {

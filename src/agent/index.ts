@@ -260,6 +260,19 @@ function normalizeComparableText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function isBootstrapUserMessage(value: string): boolean {
+  const normalized = normalizeComparableText(value);
+  if (!normalized) {
+    return false;
+  }
+
+  return normalized.startsWith("# AGENTS.md instructions for ")
+    || normalized.startsWith("<environment_context>")
+    || normalized.startsWith("<INSTRUCTIONS>")
+    || normalized.startsWith("<app-context>")
+    || normalized.startsWith("<permissions instructions>");
+}
+
 function toNullablePercent(value: unknown): number | null {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return null;
@@ -417,8 +430,10 @@ async function parseSessionFile(
     return null;
   }
 
-  const firstUser = messages.find((message) => message.role === "user");
-  const titleFallback = firstUser ? truncate(firstUser.text, 48) : `Thread ${threadId.slice(0, 8)}`;
+  const firstUser = messages.find((message) => {
+    return message.role === "user" && !isBootstrapUserMessage(message.text);
+  });
+  const titleFallback = firstUser ? truncate(firstUser.text, 48) : "未命名线程";
   const title = titleOverrides[threadId] ?? globalTitles[threadId] ?? titleFallback;
 
   const lastMessage = messages[messages.length - 1];
