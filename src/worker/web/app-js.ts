@@ -628,7 +628,7 @@ function scrollMessagesToBottom() {
 
 function isNearLatest(threshold) {
   const gap = ui.messages.scrollHeight - ui.messages.clientHeight - ui.messages.scrollTop;
-  return gap <= (threshold || 48);
+  return gap <= (threshold || 8);
 }
 
 function renderLatestJumpButton() {
@@ -661,17 +661,22 @@ function toggleTheme() {
 }
 
 function handleMessagesScroll() {
-  state.stickToLatest = isNearLatest();
-  if (state.stickToLatest) {
+  const current = ui.messages.scrollTop;
+  const nearLatest = isNearLatest();
+
+  if (nearLatest) {
+    state.stickToLatest = true;
     state.unseenMessageCount = 0;
     renderLatestJumpButton();
+  } else if (current < state.mobileLastScrollTop - 6) {
+    state.stickToLatest = false;
   }
 
   if (!isMobileView()) {
+    state.mobileLastScrollTop = current;
     return;
   }
 
-  const current = ui.messages.scrollTop;
   if (current <= 6) {
     setMobileTopbarVisible(true);
     state.mobileLastScrollTop = current;
@@ -1016,7 +1021,6 @@ function renderMessages() {
   const previousThreadId = state.lastRenderedThreadId;
   const previousMessageCount = state.lastRenderedMessageCount;
   const previousScrollTop = ui.messages.scrollTop;
-  const previousNearLatest = isNearLatest();
   const threadChanged = previousThreadId !== thread.id;
 
   ui.messages.innerHTML = "";
@@ -1059,7 +1063,7 @@ function renderMessages() {
     ui.messages.appendChild(card);
   }
 
-  const shouldAutoScroll = threadChanged || state.stickToLatest || previousNearLatest;
+  const shouldAutoScroll = threadChanged || state.stickToLatest;
   const addedMessages = !threadChanged && currentMessageCount > previousMessageCount
     ? currentMessageCount - previousMessageCount
     : 0;
