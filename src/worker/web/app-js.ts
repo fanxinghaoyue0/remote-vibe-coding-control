@@ -554,31 +554,12 @@ function closeMobileDrawer() {
 }
 
 function setMobileTopbarVisible(visible) {
-  if (state.mobileTopbarVisible === visible && (!visible || !document.body.classList.contains("mobile-topbar-hidden"))) {
-    return;
-  }
-
-  state.mobileTopbarVisible = visible;
+  state.mobileTopbarVisible = true;
+  document.body.classList.remove("mobile-topbar-hidden");
   if (!ui.topbar || !isMobileView()) {
     return;
   }
-
-  if (state.mobileTopbarSettleTimer) {
-    clearTimeout(state.mobileTopbarSettleTimer);
-    state.mobileTopbarSettleTimer = null;
-  }
-
-  if (visible) {
-    document.body.classList.remove("mobile-topbar-hidden");
-    ui.topbar.classList.remove("topbar-hidden");
-    return;
-  }
-
-  ui.topbar.classList.add("topbar-hidden");
-  state.mobileTopbarSettleTimer = setTimeout(() => {
-    document.body.classList.add("mobile-topbar-hidden");
-    state.mobileTopbarSettleTimer = null;
-  }, 140);
+  ui.topbar.classList.remove("topbar-hidden");
 }
 
 function setMobileNavMode(mode) {
@@ -677,17 +658,6 @@ function handleMessagesScroll() {
     return;
   }
 
-  if (current <= 6) {
-    setMobileTopbarVisible(true);
-    state.mobileLastScrollTop = current;
-    return;
-  }
-
-  if (current > state.mobileLastScrollTop + 12 && current > 72) {
-    setMobileTopbarVisible(false);
-  } else if (current < state.mobileLastScrollTop - 10) {
-    setMobileTopbarVisible(true);
-  }
   state.mobileLastScrollTop = current;
 }
 
@@ -1096,7 +1066,7 @@ function renderAll() {
   renderMobileTopbarMeta();
   if (isMobileView()) {
     setMobileNavMode(state.mobileNavMode);
-    setMobileTopbarVisible(state.mobileTopbarVisible);
+    setMobileTopbarVisible(true);
   } else if (ui.topbar) {
     ui.topbar.classList.remove("topbar-hidden");
     document.body.classList.remove("mobile-topbar-hidden");
@@ -1556,6 +1526,7 @@ function wireEvents() {
     closeSyncMenu();
     if (!isMobileView() && ui.topbar) {
       ui.topbar.classList.remove("topbar-hidden");
+      document.body.classList.remove("mobile-topbar-hidden");
     }
   });
 }

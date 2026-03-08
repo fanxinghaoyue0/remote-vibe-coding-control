@@ -607,8 +607,12 @@ button.ghost {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: calc(env(safe-area-inset-top) + 12px) 12px 12px 12px;
   border-bottom: 1px solid var(--line);
+  background: var(--bg-elev);
 }
 
 .mobile-drawer-path {
@@ -640,8 +644,8 @@ button.ghost {
 }
 
 .mobile-drawer-close {
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border-radius: 8px;
   font-size: 18px;
@@ -667,11 +671,7 @@ button.ghost {
 
 @media (max-width: 900px) {
   body {
-    --mobile-topbar-space: calc(46px + env(safe-area-inset-top));
-  }
-
-  body.mobile-topbar-hidden {
-    --mobile-topbar-space: 0px;
+    --mobile-topbar-space: calc(52px + env(safe-area-inset-top));
   }
 
   body {
@@ -688,7 +688,6 @@ button.ghost {
     grid-template-columns: 1fr;
     min-height: 0;
     padding-top: var(--mobile-topbar-space);
-    transition: padding-top 180ms ease;
   }
 
   .nav-panel {
@@ -700,20 +699,13 @@ button.ghost {
   }
 
   .topbar {
-    padding: calc(env(safe-area-inset-top) + 6px) 8px 6px 8px;
-    min-height: calc(46px + env(safe-area-inset-top));
+    padding: calc(env(safe-area-inset-top) + 10px) 10px 8px 10px;
+    min-height: calc(52px + env(safe-area-inset-top));
     position: fixed;
     left: 0;
     right: 0;
     top: 0;
     z-index: 44;
-    transition: transform 180ms ease, opacity 180ms ease;
-  }
-
-  .topbar.topbar-hidden {
-    transform: translateY(-120%);
-    opacity: 0;
-    pointer-events: none;
   }
 
   .topbar-right {
@@ -811,8 +803,8 @@ button.ghost {
   }
 
   .mobile-menu-toggle {
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
     font-size: 20px;
   }
 
