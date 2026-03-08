@@ -65,6 +65,7 @@ const ui = {
   mobileThreadTitle: document.getElementById("mobile-thread-title"),
   mobileProjectList: document.getElementById("mobile-project-list"),
   mobileThreadList: document.getElementById("mobile-thread-list"),
+  mobileNewThreadBtn: document.getElementById("mobile-new-thread-btn"),
   downloadLink: document.getElementById("download-link"),
   tutorialLink: document.getElementById("tutorial-link"),
   downloadDock: document.getElementById("download-dock"),
@@ -1459,6 +1460,12 @@ function wireEvents() {
   ui.mobileDrawerOverlay.addEventListener("click", () => {
     closeMobileDrawer();
   });
+
+  if (ui.mobileNewThreadBtn) {
+    ui.mobileNewThreadBtn.addEventListener("click", () => {
+      handleNewThread().catch((error) => setStatus("创建失败: " + error.message));
+    });
+  }
 
   if (ui.mobilePathProjects) {
     ui.mobilePathProjects.addEventListener("click", () => {

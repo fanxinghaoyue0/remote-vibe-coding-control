@@ -120,6 +120,9 @@ export const APP_HTML = `<!doctype html>
       </div>
       <div id="mobile-thread-section" class="mobile-nav-section hidden">
         <div id="mobile-thread-title" class="panel-title">选择线程</div>
+        <div class="mobile-thread-actions">
+          <button id="mobile-new-thread-btn" class="primary" type="button">新增线程</button>
+        </div>
         <ul id="mobile-thread-list" class="list"></ul>
       </div>
     </aside>

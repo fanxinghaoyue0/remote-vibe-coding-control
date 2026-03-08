@@ -661,6 +661,15 @@ button.ghost {
   padding: 10px;
 }
 
+.mobile-thread-actions {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.mobile-thread-actions button {
+  width: 100%;
+}
+
 @media (max-width: 1280px) and (min-width: 901px) {
   .layout {
     grid-template-columns: 220px 260px minmax(0, 1fr);
