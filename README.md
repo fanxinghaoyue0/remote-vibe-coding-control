@@ -22,6 +22,7 @@
 - `Cloudflare Worker + KV`
   - 存密文快照与密文操作队列
   - 远程操作采用“单挂起任务”模型，降低空闲轮询时的 KV `list` 消耗
+  - 默认参数面向 Cloudflare 免费额度优化，而不是面向最低延迟优化
   - `AGENT_TOKEN` 鉴权本地 Agent
   - `viewer proof`（由主密钥派生）鉴权 Web 管理页面
 - `Local Agent`
@@ -131,6 +132,12 @@ npm run dev:agent
 - Worker/KV 返回配额或限流错误时，Agent 会进入冷却并自动重试
 - 远程异常期间 Agent 进程保持运行，配额恢复后自动恢复同步
 
+### 免费额度取舍说明
+
+- 当前默认实现是为了匹配 Cloudflare 免费 KV 配额而做的折中方案，因此会主动牺牲部分“实时消息响应”和“高频状态刷新”体验
+- 如果你希望更快的消息到达、更高频的在线状态更新、更密集的执行过程回传，通常需要使用付费资源，并相应调高轮询/心跳/实时同步参数
+- 换言之，当前代码的低频策略是成本优先配置，不是极致实时配置；如需高实时性，请结合你的付费方案自行调整代码
+
 ### 许可证
 
 本项目采用 `MIT` License，允许商用、修改、分发与私有使用，但不提供任何担保。详见 [LICENSE](LICENSE)。
@@ -157,6 +164,7 @@ A Cloudflare-based remote Codex control console so you can control your office C
 - `Cloudflare Worker + KV`
   - Stores encrypted snapshots and encrypted operation queue
   - Uses a single pending-operation slot to avoid idle KV `list` scans
+  - Defaults are tuned for Cloudflare free-tier quotas rather than lowest-latency delivery
   - `AGENT_TOKEN` authenticates local agent
   - viewer proof (derived from master key) authenticates web viewer
 - `Local Agent`
@@ -265,6 +273,12 @@ Note: this workflow is only suitable for environments where authorization and ri
 - Remote operations use a single pending slot, so the agent reads one fixed key instead of listing queued keys
 - If Worker/KV returns quota or rate-limit errors, Agent enters cooldown and retries later automatically
 - Agent process keeps running during remote failures and recovers automatically when quota/network is back
+
+### Free-Tier Tradeoffs
+
+- The default implementation is intentionally tuned to fit Cloudflare Workers KV free-tier limits, which means some real-time responsiveness is traded away to reduce cost
+- If you need faster message delivery, more frequent online-state updates, or denser live execution feedback, you will typically need paid resources and higher sync/polling settings
+- In other words, the current defaults are cost-optimized, not latency-optimized; if low latency matters more than quota efficiency, adjust the code to match your paid plan
 
 ### License
 
