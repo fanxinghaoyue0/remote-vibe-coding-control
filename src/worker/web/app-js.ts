@@ -15,6 +15,7 @@ const state = {
   waitPollTimer: null,
   mobileNavMode: "projects",
   theme: "dark",
+  sendInFlight: false,
 };
 
 const ui = {
@@ -214,7 +215,266 @@ function truncate(text, max) {
 }
 
 function normalizeComparableText(value) {
-  return String(value || "").replace(/\\s+/g, " ").trim();
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/\x60/g, "&#96;");
+}
+
+function sanitizeLinkUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  try {
+    const url = new URL(raw, window.location.origin);
+    const protocol = url.protocol.toLowerCase();
+    if (protocol === "http:" || protocol === "https:" || protocol === "mailto:") {
+      return url.href;
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function renderInlineMarkdown(text) {
+  const segments = String(text || "").split(/(\x60[^\x60]+\x60)/g);
+  return segments.map((segment) => {
+    if (/^\x60[^\x60]+\x60$/.test(segment)) {
+      return "<code>" + escapeHtml(segment.slice(1, -1)) + "</code>";
+    }
+
+    let html = escapeHtml(segment);
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, href) => {
+      const safeHref = sanitizeLinkUrl(href);
+      if (!safeHref) {
+        return escapeHtml(label);
+      }
+      return "<a href=\"" + escapeAttribute(safeHref) + "\" target=\"_blank\" rel=\"noreferrer\">"
+        + escapeHtml(label)
+        + "</a>";
+    });
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    html = html.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, "$1<em>$2</em>");
+    html = html.replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?]|$)/g, "$1<em>$2</em>");
+    return html;
+  }).join("");
+}
+
+function buildMarkdownBlocks(text) {
+  const blocks = [];
+  const source = String(text || "").replace(/\r\n/g, "\n");
+  const fencePattern = /\x60\x60\x60([a-zA-Z0-9_+-]*)\n?([\s\S]*?)\x60\x60\x60/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = fencePattern.exec(source)) !== null) {
+    if (match.index > lastIndex) {
+      blocks.push({ type: "markdown", text: source.slice(lastIndex, match.index) });
+    }
+    blocks.push({
+      type: "code",
+      language: (match[1] || "").trim(),
+      code: String(match[2] || "").replace(/\n$/, ""),
+    });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < source.length) {
+    blocks.push({ type: "markdown", text: source.slice(lastIndex) });
+  }
+
+  if (blocks.length === 0) {
+    blocks.push({ type: "markdown", text: source });
+  }
+
+  return blocks;
+}
+
+function appendMarkdownText(container, text) {
+  const lines = String(text || "").replace(/^\n+|\n+$/g, "").split("\n");
+  let paragraph = [];
+  let listType = "";
+  let listItems = [];
+  let quoteLines = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length === 0) {
+      return;
+    }
+    const node = document.createElement("p");
+    node.innerHTML = paragraph.map((line) => renderInlineMarkdown(line)).join("<br>");
+    container.appendChild(node);
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (listItems.length === 0) {
+      return;
+    }
+    const list = document.createElement(listType === "ol" ? "ol" : "ul");
+    for (const itemText of listItems) {
+      const item = document.createElement("li");
+      item.innerHTML = renderInlineMarkdown(itemText);
+      list.appendChild(item);
+    }
+    container.appendChild(list);
+    listItems = [];
+    listType = "";
+  };
+
+  const flushQuote = () => {
+    if (quoteLines.length === 0) {
+      return;
+    }
+    const quote = document.createElement("blockquote");
+    quote.innerHTML = quoteLines.map((line) => renderInlineMarkdown(line)).join("<br>");
+    container.appendChild(quote);
+    quoteLines = [];
+  };
+
+  const flushAll = () => {
+    flushParagraph();
+    flushList();
+    flushQuote();
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\t/g, "    ");
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushAll();
+      continue;
+    }
+
+    const headingMatch = /^(#{1,4})\s+(.+)$/.exec(trimmed);
+    if (headingMatch) {
+      flushAll();
+      const level = Math.min(headingMatch[1].length, 4);
+      const heading = document.createElement("h" + String(level));
+      heading.innerHTML = renderInlineMarkdown(headingMatch[2]);
+      container.appendChild(heading);
+      continue;
+    }
+
+    const quoteMatch = /^>\s?(.*)$/.exec(trimmed);
+    if (quoteMatch) {
+      flushParagraph();
+      flushList();
+      quoteLines.push(quoteMatch[1]);
+      continue;
+    }
+
+    const orderedMatch = /^\d+\.\s+(.+)$/.exec(trimmed);
+    if (orderedMatch) {
+      flushParagraph();
+      flushQuote();
+      if (listType && listType !== "ol") {
+        flushList();
+      }
+      listType = "ol";
+      listItems.push(orderedMatch[1]);
+      continue;
+    }
+
+    const unorderedMatch = /^[-*]\s+(.+)$/.exec(trimmed);
+    if (unorderedMatch) {
+      flushParagraph();
+      flushQuote();
+      if (listType && listType !== "ul") {
+        flushList();
+      }
+      listType = "ul";
+      listItems.push(unorderedMatch[1]);
+      continue;
+    }
+
+    flushList();
+    flushQuote();
+    paragraph.push(line);
+  }
+
+  flushAll();
+}
+
+async function copyTextToClipboard(text, button) {
+  const label = button.textContent || "复制";
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "已复制";
+    setTimeout(() => {
+      button.textContent = label;
+    }, 1200);
+  } catch {
+    button.textContent = "复制失败";
+    setTimeout(() => {
+      button.textContent = label;
+    }, 1200);
+  }
+}
+
+function renderMessageContent(text) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "msg-body";
+
+  for (const block of buildMarkdownBlocks(text)) {
+    if (block.type === "code") {
+      const codeWrap = document.createElement("div");
+      codeWrap.className = "code-block";
+
+      const codeHead = document.createElement("div");
+      codeHead.className = "code-head";
+
+      const codeLang = document.createElement("span");
+      codeLang.className = "code-lang";
+      codeLang.textContent = block.language || "code";
+
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "code-copy-btn";
+      copyBtn.textContent = "复制";
+      copyBtn.addEventListener("click", () => {
+        copyTextToClipboard(block.code, copyBtn);
+      });
+
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.textContent = block.code;
+      pre.appendChild(code);
+
+      codeHead.appendChild(codeLang);
+      codeHead.appendChild(copyBtn);
+      codeWrap.appendChild(codeHead);
+      codeWrap.appendChild(pre);
+      wrapper.appendChild(codeWrap);
+      continue;
+    }
+
+    if (String(block.text || "").trim()) {
+      appendMarkdownText(wrapper, block.text);
+    }
+  }
+
+  if (wrapper.childNodes.length === 0) {
+    const fallback = document.createElement("p");
+    fallback.textContent = "";
+    wrapper.appendChild(fallback);
+  }
+
+  return wrapper;
 }
 
 function isMobileView() {
@@ -361,15 +621,27 @@ function countAssistantMessages(thread) {
 
 function pushPendingMessage(thread, text) {
   const list = state.pendingMessages[thread.id] || [];
-  list.push({
+  const entry = {
     id: "pending-" + Date.now() + "-" + Math.floor(Math.random() * 10000),
     role: "user",
     text,
     timestamp: new Date().toISOString(),
     pending: true,
+    pendingState: "queued",
     baselineCount: thread.messageCount,
-  });
+  };
+  list.push(entry);
   state.pendingMessages[thread.id] = list;
+  return entry.id;
+}
+
+function updatePendingMessageState(threadId, pendingId, nextState) {
+  const list = state.pendingMessages[threadId] || [];
+  const item = list.find((entry) => entry.id === pendingId);
+  if (!item) {
+    return;
+  }
+  item.pendingState = nextState;
 }
 
 function reconcilePending(snapshot) {
@@ -445,6 +717,16 @@ function dedupeMessagesForDisplay(messages) {
   }
 
   return result;
+}
+
+function formatPendingRoleLabel(message) {
+  if (!message.pending) {
+    return message.role;
+  }
+  if (message.pendingState === "running") {
+    return message.role + " (已接收)";
+  }
+  return message.role + " (已提交)";
 }
 
 function applyResponsiveLabels() {
@@ -637,14 +919,16 @@ function renderMessages() {
   for (const message of combinedMessages) {
     const card = document.createElement("div");
     card.className = "msg " + message.role + (message.pending ? " pending" : "");
+    if (message.pending && message.pendingState) {
+      card.classList.add("pending-" + message.pendingState);
+    }
 
     const head = document.createElement("div");
     head.className = "msg-head";
-    const roleText = message.pending ? (message.role + " (pending)") : message.role;
+    const roleText = formatPendingRoleLabel(message);
     head.innerHTML = "<span>" + roleText + "</span><span>" + formatTime(message.timestamp) + "</span>";
 
-    const content = document.createElement("div");
-    content.textContent = message.text;
+    const content = renderMessageContent(message.text);
 
     card.appendChild(head);
     card.appendChild(content);
@@ -765,7 +1049,7 @@ async function queueOperation(operation) {
     },
     true,
   );
-  setStatus("任务已排队: " + payload.opId);
+  return payload;
 }
 
 function stopAssistantPolling() {
@@ -780,7 +1064,11 @@ function startAssistantPolling(threadId, baselineAssistantCount) {
   stopAssistantPolling();
   state.waitState = {
     threadId,
+    promptText: "",
+    promptComparable: "",
+    pendingId: "",
     baselineAssistantCount,
+    phase: "queued",
     startedAt: Date.now(),
   };
 
@@ -804,6 +1092,21 @@ function startAssistantPolling(threadId, baselineAssistantCount) {
     const agentStatus = state.snapshot ? state.snapshot.agentStatus : null;
     const assistantCount = countAssistantMessages(thread);
     const isRunning = agentStatus && agentStatus.syncState === "running_command";
+    const hasAccepted = thread
+      ? thread.messages.some((message) => {
+        return message.role === "user"
+          && normalizeComparableText(message.text) === waitState.promptComparable;
+      })
+      : false;
+
+    if (waitState.phase === "queued" && (hasAccepted || isRunning)) {
+      waitState.phase = "running";
+      if (waitState.pendingId) {
+        updatePendingMessageState(waitState.threadId, waitState.pendingId, "running");
+        renderMessages();
+      }
+      setStatus(isRunning ? "Agent 已接收，正在处理..." : "Agent 已接收，等待助手回复...");
+    }
 
     if (thread && assistantCount > waitState.baselineAssistantCount && !isRunning) {
       stopAssistantPolling();
@@ -820,7 +1123,7 @@ function startAssistantPolling(threadId, baselineAssistantCount) {
     state.waitPollTimer = setTimeout(tick, 1000);
   };
 
-  setStatus("等待助手回复中...");
+  setStatus("消息已提交，等待 Agent 接收...");
   state.waitPollTimer = setTimeout(tick, 1000);
 }
 
@@ -880,6 +1183,11 @@ async function handleSend() {
     return;
   }
 
+  if (state.sendInFlight) {
+    setStatus("上一条发送请求还在提交中");
+    return;
+  }
+
   const prompt = String(ui.promptInput.value || "").trim();
   if (!prompt) {
     setStatus("消息不能为空");
@@ -887,17 +1195,29 @@ async function handleSend() {
   }
 
   const baselineAssistantCount = countAssistantMessages(thread);
+  state.sendInFlight = true;
+  ui.sendBtn.disabled = true;
 
-  await queueOperation({
-    type: "send_message",
-    threadId: thread.id,
-    prompt,
-  });
+  try {
+    await queueOperation({
+      type: "send_message",
+      threadId: thread.id,
+      prompt,
+    });
 
-  pushPendingMessage(thread, prompt);
-  ui.promptInput.value = "";
-  renderMessages();
-  startAssistantPolling(thread.id, baselineAssistantCount);
+    const pendingId = pushPendingMessage(thread, prompt);
+    ui.promptInput.value = "";
+    renderMessages();
+    startAssistantPolling(thread.id, baselineAssistantCount);
+    if (state.waitState) {
+      state.waitState.promptText = prompt;
+      state.waitState.promptComparable = normalizeComparableText(prompt);
+      state.waitState.pendingId = pendingId;
+    }
+  } finally {
+    state.sendInFlight = false;
+    ui.sendBtn.disabled = false;
+  }
 }
 
 async function handleNewThread() {
@@ -921,11 +1241,13 @@ async function handleNewThread() {
     title: title || undefined,
   });
 
+  setStatus("线程创建请求已提交，等待 Agent 执行");
   await fetchSnapshot();
 }
 
 async function handleRequestSync() {
   await queueOperation({ type: "refresh_snapshot" });
+  setStatus("已请求服务端刷新");
   await fetchSnapshot();
 }
 

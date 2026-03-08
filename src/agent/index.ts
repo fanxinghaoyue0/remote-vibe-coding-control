@@ -67,7 +67,7 @@ const env = {
   codexHome: process.env.CODEX_HOME?.trim() ?? path.join(os.homedir(), ".codex"),
   loopIntervalMs: Number(process.env.LOOP_INTERVAL_MS ?? "2000"),
   pollIntervalActiveMs: Number(process.env.POLL_INTERVAL_ACTIVE_MS ?? "3000"),
-  pollIntervalIdleMs: Number(process.env.POLL_INTERVAL_IDLE_MS ?? "15000"),
+  pollIntervalIdleMs: Number(process.env.POLL_INTERVAL_IDLE_MS ?? "5000"),
   activityWindowMs: Number(process.env.ACTIVITY_WINDOW_MS ?? "120000"),
   snapshotDebounceMs: Number(process.env.SNAPSHOT_DEBOUNCE_MS ?? "1500"),
   presencePingIntervalMs: Number(process.env.PRESENCE_PING_INTERVAL_MS ?? "1800000"),

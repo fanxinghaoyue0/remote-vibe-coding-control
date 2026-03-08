@@ -210,6 +210,14 @@ a {
   border-style: dashed;
 }
 
+.msg.pending-queued {
+  opacity: 0.88;
+}
+
+.msg.pending-running {
+  opacity: 0.96;
+}
+
 .msg-head {
   display: flex;
   justify-content: space-between;
@@ -217,6 +225,107 @@ a {
   font-family: "IBM Plex Mono", "Menlo", monospace;
   color: var(--muted);
   margin-bottom: 6px;
+}
+
+.msg-body {
+  display: grid;
+  gap: 10px;
+}
+
+.msg-body > * {
+  margin: 0;
+}
+
+.msg-body p,
+.msg-body ul,
+.msg-body ol,
+.msg-body blockquote,
+.msg-body h1,
+.msg-body h2,
+.msg-body h3,
+.msg-body h4 {
+  margin: 0;
+}
+
+.msg-body ul,
+.msg-body ol {
+  padding-left: 20px;
+}
+
+.msg-body li + li {
+  margin-top: 4px;
+}
+
+.msg-body a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.msg-body code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.92em;
+  background: color-mix(in srgb, var(--bg), var(--line) 42%);
+}
+
+.msg-body blockquote {
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+.code-block {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg), #000 10%);
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elev-2), #000 12%);
+}
+
+.code-lang {
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+
+.code-copy-btn {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.code-copy-btn:hover {
+  border-color: var(--accent);
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.code-block pre code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .controls {
