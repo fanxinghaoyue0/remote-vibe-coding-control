@@ -654,13 +654,8 @@ function handleMessagesScroll() {
     state.stickToLatest = true;
     state.unseenMessageCount = 0;
     renderLatestJumpButton();
-  } else if (current < state.mobileLastScrollTop - 6) {
+  } else {
     state.stickToLatest = false;
-  }
-
-  if (!isMobileView()) {
-    state.mobileLastScrollTop = current;
-    return;
   }
 
   state.mobileLastScrollTop = current;
@@ -1254,6 +1249,8 @@ function renderMessages() {
       state.unseenMessageCount += addedMessages;
     }
   }
+
+  state.mobileLastScrollTop = ui.messages.scrollTop;
 
   renderLatestJumpButton();
 }
