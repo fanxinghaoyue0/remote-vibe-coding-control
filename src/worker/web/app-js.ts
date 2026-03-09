@@ -21,6 +21,8 @@ const state = {
   waitState: null,
   waitPollTimer: null,
   autoRefreshTimer: null,
+  messageSelectionActive: false,
+  deferredRenderPending: false,
   mobileNavMode: "projects",
   theme: "dark",
   sendInFlight: false,
@@ -928,7 +930,7 @@ function stopAutoRefresh() {
 
 function scheduleAutoRefresh(delayMs) {
   stopAutoRefresh();
-  if (!state.agentId || !state.viewerProof) {
+  if (!state.agentId || !state.viewerProof || state.messageSelectionActive) {
     return;
   }
 
@@ -951,6 +953,36 @@ function scheduleAutoRefresh(delayMs) {
 
 function restartAutoRefresh(delayMs) {
   scheduleAutoRefresh(delayMs);
+}
+
+function isMessageSelectionActive() {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+    return false;
+  }
+
+  const anchorNode = selection.anchorNode;
+  const focusNode = selection.focusNode;
+  return Boolean(
+    (anchorNode && ui.messages.contains(anchorNode))
+    || (focusNode && ui.messages.contains(focusNode)),
+  );
+}
+
+function handleSelectionChange() {
+  const active = isMessageSelectionActive();
+  state.messageSelectionActive = active;
+
+  if (active) {
+    stopAutoRefresh();
+    return;
+  }
+
+  if (state.deferredRenderPending) {
+    state.deferredRenderPending = false;
+    renderAll();
+  }
+  restartAutoRefresh(0);
 }
 
 function dedupeMessagesForDisplay(messages) {
@@ -1352,6 +1384,11 @@ async function fetchSnapshot(options) {
         state.selectedThreadId = projectThreadIds[0];
     }
 
+    if (state.messageSelectionActive && state.selectedThreadId) {
+      state.deferredRenderPending = true;
+      return;
+    }
+
     renderAll();
     if (!opts.silent) {
       setStatus("已同步: " + formatTime(snapshot.generatedAt));
@@ -1750,6 +1787,10 @@ function wireEvents() {
     if (event.key === "Escape") {
       closeSyncMenu();
     }
+  });
+
+  document.addEventListener("selectionchange", () => {
+    handleSelectionChange();
   });
 
   ui.messages.addEventListener("scroll", () => {
