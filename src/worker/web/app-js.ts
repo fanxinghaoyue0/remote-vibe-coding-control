@@ -4,6 +4,7 @@ const state = {
   masterKey: "",
   viewerProof: "",
   snapshot: null,
+  snapshotFetchPromise: null,
   agentPresence: null,
   kvUsage: null,
   selectedProjectId: "",
@@ -19,6 +20,7 @@ const state = {
   lastRenderedMessageCount: 0,
   waitState: null,
   waitPollTimer: null,
+  autoRefreshTimer: null,
   mobileNavMode: "projects",
   theme: "dark",
   sendInFlight: false,
@@ -235,6 +237,7 @@ async function request(path, options, includeViewerAuth) {
   }
   const response = await fetch(path, {
     ...opts,
+    cache: "no-store",
     headers,
   });
   let body = null;
@@ -827,8 +830,19 @@ function countAssistantMessages(thread) {
   return thread.messages.filter((message) => message.role === "assistant").length;
 }
 
+function countUserMessagesByText(thread, comparableText) {
+  if (!thread || !thread.messages || !comparableText) {
+    return 0;
+  }
+  return thread.messages.filter((message) => {
+    return message.role === "user"
+      && normalizeComparableText(message.text) === comparableText;
+  }).length;
+}
+
 function pushPendingMessage(thread, text) {
   const list = state.pendingMessages[thread.id] || [];
+  const comparableText = normalizeComparableText(text);
   const entry = {
     id: "pending-" + Date.now() + "-" + Math.floor(Math.random() * 10000),
     role: "user",
@@ -837,6 +851,8 @@ function pushPendingMessage(thread, text) {
     pending: true,
     pendingState: "queued",
     baselineCount: thread.messageCount,
+    baselineSameTextCount: countUserMessagesByText(thread, comparableText),
+    comparableText,
   };
   list.push(entry);
   state.pendingMessages[thread.id] = list;
@@ -866,12 +882,26 @@ function reconcilePending(snapshot) {
 
     const remaining = [];
     for (const pending of currentPending) {
-      const hasSameUserMessage = thread.messages.some((message) => {
+      const pendingTimestampMs = Date.parse(pending.timestamp);
+      const matchingMessages = thread.messages.filter((message) => {
         return message.role === "user"
-          && normalizeComparableText(message.text) === normalizeComparableText(pending.text);
+          && normalizeComparableText(message.text) === (pending.comparableText || normalizeComparableText(pending.text));
       });
+      const hasNewMatchingMessage = matchingMessages.some((message) => {
+        const messageTimestampMs = Date.parse(message.timestamp);
+        if (!Number.isFinite(pendingTimestampMs) || !Number.isFinite(messageTimestampMs)) {
+          return false;
+        }
+        return messageTimestampMs + 5000 >= pendingTimestampMs;
+      });
+      const sameTextCount = matchingMessages.length;
+      const baselineSameTextCount = Number.isFinite(pending.baselineSameTextCount)
+        ? pending.baselineSameTextCount
+        : 0;
+      const hasAcceptedUserMessage = hasNewMatchingMessage
+        || sameTextCount > baselineSameTextCount;
 
-      if (!hasSameUserMessage) {
+      if (!hasAcceptedUserMessage) {
         remaining.push(pending);
       }
     }
@@ -882,6 +912,50 @@ function reconcilePending(snapshot) {
   }
 
   state.pendingMessages = nextPending;
+}
+
+function getAutoRefreshIntervalMs() {
+  if (state.waitState) {
+    return 1000;
+  }
+  if (document.hidden) {
+    return 15000;
+  }
+  return 2500;
+}
+
+function stopAutoRefresh() {
+  if (state.autoRefreshTimer) {
+    clearTimeout(state.autoRefreshTimer);
+    state.autoRefreshTimer = null;
+  }
+}
+
+function scheduleAutoRefresh(delayMs) {
+  stopAutoRefresh();
+  if (!state.agentId || !state.viewerProof) {
+    return;
+  }
+
+  const nextDelay = typeof delayMs === "number" ? delayMs : getAutoRefreshIntervalMs();
+  state.autoRefreshTimer = setTimeout(async () => {
+    state.autoRefreshTimer = null;
+    if (!state.agentId || !state.viewerProof) {
+      return;
+    }
+
+    try {
+      await fetchSnapshot({ silent: true });
+    } catch (error) {
+      console.error("auto refresh failed", error);
+    } finally {
+      scheduleAutoRefresh();
+    }
+  }, Math.max(500, nextDelay));
+}
+
+function restartAutoRefresh(delayMs) {
+  scheduleAutoRefresh(delayMs);
 }
 
 function dedupeMessagesForDisplay(messages) {
@@ -1225,62 +1299,71 @@ async function fetchSnapshot(options) {
   if (!opts.silent) {
     setStatus("同步中...");
   }
-
-  const payload = await request(
-    "/api/view/snapshot?agentId=" + encodeURIComponent(state.agentId),
-    { method: "GET" },
-    true,
-  );
-
-  if (!payload.snapshotEnvelope) {
-    state.snapshot = null;
-    state.agentPresence = payload.agentPresence || null;
-    state.kvUsage = null;
-    clearMessages("本地 Agent 还未同步数据，请先启动本地控制端。\n\n启动命令: npm run dev:agent");
-    renderAgentBadge();
-    setStatus("等待本地 Agent 上传快照");
-    return;
+  if (state.snapshotFetchPromise) {
+    return state.snapshotFetchPromise;
   }
 
-  const snapshot = await decryptJson(state.masterKey, payload.snapshotEnvelope);
-  state.snapshot = snapshot;
-  state.agentPresence = payload.agentPresence || null;
-  state.kvUsage = payload.kvUsage || null;
-  reconcileDraftThreads(snapshot);
-  reconcilePending(snapshot);
+  state.snapshotFetchPromise = (async () => {
+    const payload = await request(
+      "/api/view/snapshot?agentId=" + encodeURIComponent(state.agentId),
+      { method: "GET" },
+      true,
+    );
 
-  if (!state.selectedProjectId && snapshot.projects.length > 0) {
-    state.selectedProjectId = snapshot.projects[0].id;
-  }
-
-  const selectedProject = getSelectedProject();
-  if (!selectedProject && snapshot.projects.length > 0) {
-    state.selectedProjectId = snapshot.projects[0].id;
-    state.selectedThreadId = "";
-  }
-
-  const projectAfterFallback = getSelectedProject();
-  const projectThreadIds = projectAfterFallback ? getProjectThreadIds(projectAfterFallback) : [];
-  if (projectAfterFallback && projectThreadIds.length > 0) {
-    if (!state.selectedThreadId || !projectThreadIds.includes(state.selectedThreadId)) {
-      if (isMobileView()) {
-        state.selectedThreadId = "";
-      } else {
-        state.selectedThreadId = projectThreadIds[0];
-      }
+    if (!payload.snapshotEnvelope) {
+      state.snapshot = null;
+      state.agentPresence = payload.agentPresence || null;
+      state.kvUsage = payload.kvUsage || null;
+      clearMessages("本地 Agent 还未同步数据，请先启动本地控制端。\n\n启动命令: npm run dev:agent");
+      renderAgentBadge();
+      setStatus("等待本地 Agent 上传快照");
+      return;
     }
-  } else {
-    state.selectedThreadId = "";
-  }
 
-  if (!isMobileView() && !state.selectedThreadId && projectAfterFallback && projectThreadIds.length > 0) {
-      state.selectedThreadId = projectThreadIds[0];
-  }
+    const snapshot = await decryptJson(state.masterKey, payload.snapshotEnvelope);
+    state.snapshot = snapshot;
+    state.agentPresence = payload.agentPresence || null;
+    state.kvUsage = payload.kvUsage || null;
+    reconcileDraftThreads(snapshot);
+    reconcilePending(snapshot);
 
-  renderAll();
-  if (!opts.silent) {
-    setStatus("已同步: " + formatTime(snapshot.generatedAt));
-  }
+    if (!state.selectedProjectId && snapshot.projects.length > 0) {
+      state.selectedProjectId = snapshot.projects[0].id;
+    }
+
+    const selectedProject = getSelectedProject();
+    if (!selectedProject && snapshot.projects.length > 0) {
+      state.selectedProjectId = snapshot.projects[0].id;
+      state.selectedThreadId = "";
+    }
+
+    const projectAfterFallback = getSelectedProject();
+    const projectThreadIds = projectAfterFallback ? getProjectThreadIds(projectAfterFallback) : [];
+    if (projectAfterFallback && projectThreadIds.length > 0) {
+      if (!state.selectedThreadId || !projectThreadIds.includes(state.selectedThreadId)) {
+        if (isMobileView()) {
+          state.selectedThreadId = "";
+        } else {
+          state.selectedThreadId = projectThreadIds[0];
+        }
+      }
+    } else {
+      state.selectedThreadId = "";
+    }
+
+    if (!isMobileView() && !state.selectedThreadId && projectAfterFallback && projectThreadIds.length > 0) {
+        state.selectedThreadId = projectThreadIds[0];
+    }
+
+    renderAll();
+    if (!opts.silent) {
+      setStatus("已同步: " + formatTime(snapshot.generatedAt));
+    }
+  })().finally(() => {
+    state.snapshotFetchPromise = null;
+  });
+
+  return state.snapshotFetchPromise;
 }
 
 async function queueOperation(operation) {
@@ -1308,6 +1391,7 @@ function stopAssistantPolling() {
     state.waitPollTimer = null;
   }
   state.waitState = null;
+  restartAutoRefresh();
 }
 
 function startAssistantPolling(threadId, baselineAssistantCount) {
@@ -1321,6 +1405,7 @@ function startAssistantPolling(threadId, baselineAssistantCount) {
     phase: "queued",
     startedAt: Date.now(),
   };
+  restartAutoRefresh(1000);
 
   const tick = async () => {
     if (!state.waitState) {
@@ -1412,6 +1497,7 @@ async function handleUnlock(event) {
     ui.unlockModal.classList.add("hidden");
     renderAgentBadge();
     localStorage.setItem("remote-vibe-agent-id", agentId);
+    restartAutoRefresh();
     if (isMobileView()) {
       openMobileDrawer();
     }
@@ -1584,6 +1670,20 @@ function wireEvents() {
 
   ui.switchBranchBtn.addEventListener("click", () => {
     handleSwitchBranch().catch((error) => setStatus("切换失败: " + error.message));
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (!state.agentId || !state.viewerProof) {
+      return;
+    }
+    restartAutoRefresh(document.hidden ? getAutoRefreshIntervalMs() : 0);
+  });
+
+  window.addEventListener("focus", () => {
+    if (!state.agentId || !state.viewerProof) {
+      return;
+    }
+    restartAutoRefresh(0);
   });
 
   ui.mobileMenuToggle.addEventListener("click", () => {
