@@ -77,7 +77,7 @@ const env = {
   remoteQuotaCooldownMs: Number(process.env.REMOTE_QUOTA_COOLDOWN_MS ?? "900000"),
   commandTimeoutMs: Number(process.env.CODEX_COMMAND_TIMEOUT_MS ?? "720000"),
   defaultModel: process.env.DEFAULT_MODEL?.trim() ?? "",
-  clientVersion: "local-agent-0.1.0",
+  clientVersion: "local-agent-1.1.0",
 };
 
 const localStateDir = path.join(env.codexHome, "remote-vibe");

@@ -730,11 +730,11 @@ function createDraftThread(project) {
     id: draftId,
     projectId: project.id,
     cwd: project.cwd,
-    title: "未命名线程",
+    title: "未命名 Web 会话",
     createdAt: now,
     updatedAt: now,
     messageCount: 0,
-    lastMessagePreview: "发送首条消息后创建",
+    lastMessagePreview: "发送首条消息后创建 Web 专属会话",
     rolloutPath: "draft",
     messages: [],
     draft: true,
@@ -1148,7 +1148,7 @@ function renderThreads() {
       continue;
     }
     const itemHtml = "<div class=\"item-title\">" + (thread.title || "未命名线程") + "</div>"
-      + "<div class=\"item-meta\">" + (isDraftThread(thread) ? "等待首条消息" : formatTime(thread.updatedAt)) + "</div>"
+      + "<div class=\"item-meta\">" + (isDraftThread(thread) ? "Web 专属 · 等待首条消息" : formatTime(thread.updatedAt)) + "</div>"
       + "<div class=\"item-meta\">" + truncate(thread.lastMessagePreview, 80) + "</div>";
 
     const desktopItem = document.createElement("li");
@@ -1225,7 +1225,7 @@ function renderMessages() {
   if (isMobileView()) {
     ui.threadMeta.textContent = thread.title;
   } else if (isDraftThread(thread)) {
-    ui.threadMeta.textContent = "新线程 | " + thread.cwd;
+    ui.threadMeta.textContent = "Web 专属会话 | 本地 Codex 客户端不显示 | " + thread.cwd;
   } else {
     ui.threadMeta.textContent = thread.id + " | " + thread.cwd;
   }
@@ -1235,7 +1235,11 @@ function renderMessages() {
   );
   const currentMessageCount = combinedMessages.length;
   if (combinedMessages.length === 0) {
-    clearMessages(isDraftThread(thread) ? "输入首条消息后会创建新线程。" : "该线程暂时没有可展示消息。");
+    clearMessages(
+      isDraftThread(thread)
+        ? "输入首条消息后会创建 Web 专属会话。\n\n该会话只在当前 Web 控制台可见，不会显示在本地 Codex 客户端。"
+        : "该线程暂时没有可展示消息。",
+    );
     state.lastRenderedThreadId = thread.id;
     state.lastRenderedMessageCount = 0;
     state.unseenMessageCount = 0;
@@ -1620,7 +1624,7 @@ async function handleNewThread() {
     closeMobileDrawer();
   }
   ui.promptInput.focus();
-  setStatus("新线程已就绪，发送首条消息后创建");
+  setStatus("Web 专属会话已就绪；发送首条消息后创建，本地 Codex 客户端不显示");
 }
 
 async function handleRequestSync() {

@@ -69,8 +69,9 @@ export const APP_HTML = `<!doctype html>
           <div class="panel-head">
             <h3 class="panel-title">线程</h3>
             <div class="control-row" style="margin-top:8px">
-              <button id="new-thread-btn" class="primary">新增线程</button>
+              <button id="new-thread-btn" class="primary">新增 Web 会话</button>
             </div>
+            <div class="helper" style="margin-top:8px">Web 专属会话不会出现在本地 Codex 客户端。</div>
           </div>
           <ul id="thread-list" class="list"></ul>
         </aside>
@@ -121,8 +122,9 @@ export const APP_HTML = `<!doctype html>
       <div id="mobile-thread-section" class="mobile-nav-section hidden">
         <div id="mobile-thread-title" class="panel-title">选择线程</div>
         <div class="mobile-thread-actions">
-          <button id="mobile-new-thread-btn" class="primary" type="button">新增线程</button>
+          <button id="mobile-new-thread-btn" class="primary" type="button">新增 Web 会话</button>
         </div>
+        <div class="helper" style="margin-top:8px">Web 专属会话不会出现在本地 Codex 客户端。</div>
         <ul id="mobile-thread-list" class="list"></ul>
       </div>
     </aside>
